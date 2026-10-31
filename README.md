@@ -15,14 +15,19 @@ NIXPKGS_ALLOW_UNFREE=1 nix build --impure
 Useful packages:
 
 ```text
-uniflash                    Repackaged TI UniFlash
+uniflash                    Repackaged TI processor serial flash CLI
 ti-arm-clang                Repackaged TI Arm Clang compiler
 sk-tda4vm-flash-writer      SK-TDA4VM S28HS512 RAM writer
 tda4vm-boot-artifacts       Boot files extracted from TI's SK WIC
 tda4vm                      Single-image processor flashing
 tda4vm-flash-nor-boot       Complete SK-TDA4VM NOR boot layout
-tda4vh                      Stock processor flashing wrapper only
+j784s4-evm-flash-writer     J784S4 EVM xSPI RAM writer (untested)
+tda4vh-boot-artifacts       TI J784S4 EVM boot files
+tda4vh                      Single-image J784S4 EVM flashing (untested)
+tda4vh-flash-nor-boot       Complete J784S4 EVM NOR boot layout (untested)
 ```
+
+The `uniflash` output intentionally excludes TI's NW.js GUI, generic DebugServer, and cloud-agent trees; J7 UART flashing uses the static `ProcessorSDKSerialFlash` tool.
 
 ## SK Boot Image
 
@@ -99,10 +104,12 @@ The command asks for `READY`, loads one RAM writer, then programs and read-back 
 
 After all four stages report `Flash Programming Success!`, set xSPI mode `OFF/OFF/ON` and restart. The main console is on `if02` at 115200 baud.
 
+The complete SK-TDA4VM flow has been hardware-tested with full-byte read-back verification for all four images.
+
 ## Timeouts
 
 - `UNIFLASH_HANDSHAKE_TIMEOUT` defaults to 5 seconds and applies only before image transfer starts.
-- `UNIFLASH_TIMEOUT` defaults to 240 seconds for each image operation.
+- `UNIFLASH_TIMEOUT` defaults to 240 seconds for the RAM-writer stage. Image operations are not killed after transfer starts.
 - Writer and TIFS transfers are RAM-only. NOR programming starts only after `Flashing Image of size` appears.
 
 ## TDA4VH
@@ -113,4 +120,6 @@ TDA4VH uses the J784S4XEVM platform. A prepared, untested one-shot NOR target is
 NIXPKGS_ALLOW_UNFREE=1 nix run --impure .#tda4vh-flash-nor-boot -- /dev/ttyUSB0
 ```
 
-The J784S4 boot files are provided by `.#tda4vh-boot-artifacts`, sourced from TI's `boot-adas-j784s4-evm.tar.gz` (SHA-256 `b8139d948a0d71dc6be16e176af4a6c2ee682e857eec9cd621c10947d7d0445d`). The flashing UART is J48 COM1; J784S4 uses FTDI bridges and does not use the SK-TDA4VM CP2108 `if01` path. This target is untested until a J784S4XEVM is connected.
+The J784S4 boot files are provided by `.#tda4vh-boot-artifacts`, sourced from TI's `boot-adas-j784s4-evm.tar.gz` (SHA-256 `b8139d948a0d71dc6be16e176af4a6c2ee682e857eec9cd621c10947d7d0445d`). Its NOR layout has three images: `tiboot3.bin` at `0x0`, `tispl.bin` at `0x80000`, and `u-boot.img` at `0x280000`; TIFS/DM is embedded.
+
+The flashing UART is J48 COM1; J784S4 uses FTDI bridges and does not use the SK-TDA4VM CP2108 `if01` path. UART boot uses `SW11=00000000`, `SW7=01110000`; OSPI boot uses `SW11=00000110`, `SW7=01000000`, with switch strings in `.1` through `.8` order. This target is untested until a J784S4XEVM is connected.

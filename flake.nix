@@ -6,12 +6,12 @@
 
   outputs = { self, nixpkgs, nixpkgs-gconf }:
     let
-      systems = [ "x86_64-linux" "aarch64-linux" ];
+      systems = [ "x86_64-linux" ];
       forAllSystems = f: nixpkgs.lib.genAttrs systems (system: f nixpkgs.legacyPackages.${system});
     in {
       packages = forAllSystems (pkgs:
         let
-          legacyPkgs = import nixpkgs-gconf { system = pkgs.system; };
+          legacyPkgs = import nixpkgs-gconf { system = pkgs.stdenv.hostPlatform.system; };
           gconf = legacyPkgs.gnome2.GConf;
           runtimeLibs = with pkgs; [
             alsa-lib atk at-spi2-atk cairo cups dbus expat fontconfig freetype glib
@@ -81,6 +81,10 @@
                 packages/ti/board/utils/uniflash/host/source/main.cpp
             '';
             postPatch = ''
+              substituteInPlace packages/ti/board/utils/uniflash/host/source/ProcessorSDKSerialFlash.cpp \
+                --replace-fail 'exit(0);' 'exit(1);' \
+                --replace-fail 'if(!(strcmp( ext,".appimage_xip" )))' \
+                  'if((ext != NULL) && !(strcmp( ext,".appimage_xip" )))'
               substituteInPlace packages/ti/board/utils/uniflash/host/source/main.cpp \
                 --replace-fail 'LoadImage( argv[i+1], &argv[1], &argv[2], argc );' \
                   'return LoadImage( argv[i+1], &argv[1], &argv[2], argc );' \
@@ -117,6 +121,9 @@
                 exit 1
               fi
               mcopy -s -i "image.wic@@$boot_offset" '::*' "$out/"
+              for image in tiboot3.bin tispl.bin u-boot.img sysfw.itb; do
+                test -s "$out/$image" || { printf 'Missing required SK image: %s\n' "$image" >&2; exit 1; }
+              done
               runHook postInstall
             '';
             meta = {
@@ -137,6 +144,9 @@
               runHook preInstall
               mkdir -p "$out"
               tar -xzf "$src" -C "$out"
+              for image in tiboot3.bin tispl.bin u-boot.img; do
+                test -s "$out/$image" || { printf 'Missing required J784S4 image: %s\n' "$image" >&2; exit 1; }
+              done
               runHook postInstall
             '';
             meta = {
@@ -168,6 +178,7 @@
                 packages/ti/board/src/flash/nor/ospi/nor_xspi.h \
                 packages/ti/board/src/flash/nor/ospi/nor_xspi.c \
                 packages/ti/board/src/flash/nor/nor.c \
+                packages/ti/board/utils/uniflash/target/src/xmodem.c \
                 packages/ti/build/makerules/env.mk
             '';
             postPatch = ''
@@ -223,6 +234,65 @@
               platforms = [ "x86_64-linux" ];
             };
           };
+          j784s4FlashWriter = pkgs.stdenvNoCC.mkDerivation {
+            pname = "j784s4-evm-uniflash-writer";
+            version = "11.02.00";
+            src = pkgs.fetchgit {
+              url = "https://git.ti.com/git/processor-sdk/pdk.git";
+              rev = "ec9f41cb291c53365fd8b64632beaf7ecfbc0828";
+              hash = "sha256-otZYtO55iERzzSKsTFwkbE/r6IkztCHMuVHmWAOj5Ic=";
+            };
+            nativeBuildInputs = with pkgs; [
+              bash coreutils dos2unix gnumake openssl perl python3
+              pkgsCross.aarch64-embedded.buildPackages.binutils
+            ];
+            prePatch = ''
+              dos2unix \
+                packages/ti/board/utils/uniflash/target/src/xmodem.c \
+                packages/ti/build/makerules/env.mk
+            '';
+            postPatch = ''
+              substituteInPlace packages/ti/board/utils/uniflash/target/src/xmodem.c \
+                --replace-fail 'for(i = 0U; i < size; i +=4U)' 'for(i = 0U; i < size; i++)'
+              substituteInPlace packages/ti/build/makerules/env.mk \
+                --replace-fail '  UTILSPATH = /bin/' '  UTILSPATH ='
+              cp -r ${cslSrc} packages/ti/csl
+              chmod -R u+w packages/ti/csl
+              cp -r ${rmPmHalSrc} packages/ti/drv/sciclient/src/rm_pm_hal
+              chmod -R u+w packages/ti/drv/sciclient/src/rm_pm_hal
+              patchShebangs packages/ti
+            '';
+            enableParallelBuilding = true;
+            dontConfigure = true;
+            buildPhase = ''
+              runHook preBuild
+              export OS=linux
+              export SDK_INSTALL_PATH="$PWD"
+              export PDK_INSTALL_PATH="$PWD/packages"
+              export TOOLS_INSTALL_PATH="$PWD"
+              export TOOLCHAIN_PATH_R5="${tiArmClang}/ti-cgt-armllvm_4.0.4.LTS"
+              export TOOLCHAIN_PATH_GCC_ARCH64="${pkgs.pkgsCross.aarch64-embedded.buildPackages.binutils}"
+              export GCC_ARCH64_BIN_PREFIX=aarch64-none-elf
+              make -C packages/ti/build -s \
+                BOARD=j784s4_evm SOC=j784s4 CORE=mcu1_0 \
+                BUILD_PROFILE=release PROFILE=release \
+                board_utils_uart_flash_programmer
+              runHook postBuild
+            '';
+            installPhase = ''
+              runHook preInstall
+              mkdir -p "$out"
+              cp packages/ti/board/utils/uniflash/target/bin/j784s4_evm/uart_j784s4_evm_flash_programmer_release.tiimage \
+                "$out/uart_j784s4_evm_flash_programmer_release.tiimage"
+              cp packages/ti/drv/sciclient/soc/V6/tifs.bin "$out/tifs.bin"
+              runHook postInstall
+            '';
+            meta = {
+              description = "UniFlash UART writer for J784S4 EVM xSPI NOR";
+              license = pkgs.lib.licenses.bsd3;
+              platforms = [ "x86_64-linux" ];
+            };
+          };
           uniflash = pkgs.stdenv.mkDerivation {
             pname = "uniflash";
             version = "9.7.0.5873";
@@ -232,7 +302,7 @@
               sha256 = "3d1788cd1ce413acf2b3927834288213bf9751100ff256687440e3a32c97b1a1";
             };
 
-            nativeBuildInputs = with pkgs; [ bash makeWrapper patchelf ];
+            nativeBuildInputs = with pkgs; [ bash patchelf ];
             dontUnpack = true;
 
             installPhase = ''
@@ -244,43 +314,29 @@
               export LD_LIBRARY_PATH="${pkgs.lib.makeLibraryPath runtimeLibs}"
               printf 'y\n' | ./uniflash-installer.run --mode unattended --prefix "$out"
 
-              patchShebangs "$out"
-
-              # TI ships binaries built for a conventional FHS Linux layout.
-              # Give every ELF object the Nix loader and shared-library RPATH.
-              interpreter="${pkgs.glibc}/lib/ld-linux-x86-64.so.2"
-              rpath="${pkgs.lib.makeLibraryPath runtimeLibs}:$out/deskdb/content/TICloudAgent/linux/ccs_base/DebugServer/bin:$out/node-webkit/lib"
-              while IFS= read -r -d "" binary; do
-                if ${pkgs.file}/bin/file "$binary" | ${pkgs.gnugrep}/bin/grep -q "ELF"; then
-                  ${pkgs.patchelf}/bin/patchelf --set-interpreter "$interpreter" --set-rpath "$rpath" "$binary" 2>/dev/null || true
-                fi
-              done < <(${pkgs.findutils}/bin/find "$out" -type f -print0)
-
-              chmod -R u+w "$out"
-              wrapProgram "$out/dslite.sh" \
-                --prefix LD_LIBRARY_PATH : "${pkgs.lib.makeLibraryPath runtimeLibs}"
-              wrapProgram "$out/uniFlashGUI.sh" \
-                --prefix LD_LIBRARY_PATH : "${pkgs.lib.makeLibraryPath runtimeLibs}"
-
+              mv "$out/processors" ./processors
+              rm -rf "$out"/*
+              mv ./processors "$out/processors"
+              cp "${processorSerialFlash}/bin/ProcessorSDKSerialFlash" \
+                "$out/processors/ProcessorSDKSerialFlash"
               mkdir -p "$out/bin"
-              ln -s "$out/dslite.sh" "$out/bin/dslite"
-              ln -s "$out/uniFlashGUI.sh" "$out/bin/uniflash-gui"
+              ln -s "$out/processors/ProcessorSDKSerialFlash" "$out/bin/uniflash-processors"
 
               runHook postInstall
             '';
 
             meta = {
               homepage = "https://www.ti.com/tool/UNIFLASH";
-              description = "TI CCStudio UniFlash flash programming tool";
+              description = "TI UniFlash processor serial programming tool";
               license = pkgs.lib.licenses.unfree;
               platforms = [ "x86_64-linux" ];
-              mainProgram = "dslite.sh";
+              mainProgram = "uniflash-processors";
             };
           };
 
-          flashTarget = target: writer: pkgs.writeShellApplication {
+          flashTarget = target: writerImage: pkgs.writeShellApplication {
             name = "${pkgs.lib.toLower target}-flash";
-            runtimeInputs = [ uniflash processorSerialFlash pkgs.coreutils pkgs.gnugrep ];
+            runtimeInputs = [ processorSerialFlash pkgs.coreutils pkgs.gnugrep ];
             text = ''
               if [ "$#" -eq 0 ]; then
                 printf '%s\n' \
@@ -298,7 +354,7 @@
               fi
 
               timeout_seconds="''${UNIFLASH_TIMEOUT:-120}"
-              ${pkgs.lib.optionalString (writer != null) ''
+              ${pkgs.lib.optionalString (writerImage != null) ''
                 port=""
                 previous=""
                 for argument in "$@"; do
@@ -316,7 +372,7 @@
                 set +e
                 timeout --foreground --kill-after=5s "$timeout_seconds" \
                   ProcessorSDKSerialFlash -d 3 -c "$port" \
-                  -f "${writer}/uart_sk_tda4vm_flash_programmer_release.tiimage" -i 0
+                  -f "${writerImage}" -i 0
                 writer_status="$?"
                 set -e
                 if [ "$writer_status" -ne 0 ] && [ "$writer_status" -ne 1 ]; then
@@ -348,18 +404,19 @@
                   wait "$image_pid" || true
                   exit 124
                 fi
-                if [ "$elapsed" -ge "$timeout_seconds" ]; then
-                  printf 'Image operation exceeded %s seconds; terminating.\n' "$timeout_seconds" >&2
-                  kill "$image_pid" 2>/dev/null || true
-                  sleep 1
-                  kill -9 "$image_pid" 2>/dev/null || true
-                  wait "$image_pid" || true
-                  exit 124
-                fi
                 sleep 1
                 elapsed=$((elapsed + 1))
               done
+              set +e
               wait "$image_pid"
+              image_status="$?"
+              set -e
+              if [ "$image_status" -ne 0 ] || \
+                 ! grep -qE 'Flashing Image|Transferring File of size' "$image_log" || \
+                 ! grep -q 'Flash Programming Success!' "$image_log"; then
+                printf 'Image operation did not report transfer plus verified success.\n' >&2
+                exit 1
+              fi
             '';
           };
           tda4vmFlashNorBoot = pkgs.writeShellApplication {
@@ -418,22 +475,22 @@
                     rm -f "$image_log"
                     return 124
                   fi
-                  if [ "$elapsed" -ge "$timeout_seconds" ]; then
-                    printf 'Image operation exceeded %s seconds; terminating.\n' "$timeout_seconds" >&2
-                    kill "$image_pid" 2>/dev/null || true
-                    sleep 1
-                    kill -9 "$image_pid" 2>/dev/null || true
-                    wait "$image_pid" || true
-                    rm -f "$image_log"
-                    return 124
-                  fi
                   sleep 1
                   elapsed=$((elapsed + 1))
                 done
+                set +e
                 wait "$image_pid"
                 status="$?"
+                set -e
+                if [ "$status" -ne 0 ] || \
+                   ! grep -qE 'Flashing Image|Transferring File of size' "$image_log" || \
+                   ! grep -q 'Flash Programming Success!' "$image_log"; then
+                  printf 'Image operation did not report transfer plus verified success.\n' >&2
+                  rm -f "$image_log"
+                  return 1
+                fi
                 rm -f "$image_log"
-                return "$status"
+                return 0
               }
 
               run_image "${tda4vmBootArtifacts}/tiboot3.bin" 1 0
@@ -445,7 +502,7 @@
           };
           tda4vhFlashNorBoot = pkgs.writeShellApplication {
             name = "tda4vh-flash-nor-boot";
-            runtimeInputs = [ uniflash processorSerialFlash pkgs.coreutils pkgs.gnugrep ];
+            runtimeInputs = [ processorSerialFlash pkgs.coreutils pkgs.gnugrep ];
             text = ''
               port="''${1:-''${UNIFLASH_PORT:-/dev/ttyUSB0}}"
               timeout_seconds="''${UNIFLASH_TIMEOUT:-240}"
@@ -465,7 +522,7 @@
               set +e
               timeout --foreground --kill-after=5s "$timeout_seconds" \
                 ProcessorSDKSerialFlash -d 3 -c "$port" \
-                -f "${uniflash}/processors/FlashWriter/j784s4_evm/uart_j784s4_evm_flash_programmer_release.tiimage" -i 0
+                -f "${j784s4FlashWriter}/uart_j784s4_evm_flash_programmer_release.tiimage" -i 0
               writer_status="$?"
               set -e
               if [ "$writer_status" -ne 0 ] && [ "$writer_status" -ne 1 ]; then
@@ -493,46 +550,48 @@
                     rm -f "$image_log"
                     return 124
                   fi
-                  if [ "$elapsed" -ge "$timeout_seconds" ]; then
-                    kill "$image_pid" 2>/dev/null || true
-                    sleep 1
-                    kill -9 "$image_pid" 2>/dev/null || true
-                    wait "$image_pid" || true
-                    rm -f "$image_log"
-                    return 124
-                  fi
                   sleep 1
                   elapsed=$((elapsed + 1))
                 done
+                set +e
                 wait "$image_pid"
                 status="$?"
+                set -e
+                if [ "$status" -ne 0 ] || \
+                   ! grep -qE 'Flashing Image|Transferring File of size' "$image_log" || \
+                   ! grep -q 'Flash Programming Success!' "$image_log"; then
+                  printf 'Image operation did not report transfer plus verified success.\n' >&2
+                  rm -f "$image_log"
+                  return 1
+                fi
                 rm -f "$image_log"
-                return "$status"
+                return 0
               }
 
               run_image "${tda4vhBootArtifacts}/tiboot3.bin" 1 0
               run_image "${tda4vhBootArtifacts}/tispl.bin" 2 80000
               run_image "${tda4vhBootArtifacts}/u-boot.img" 2 280000
-              run_image "${tda4vhBootArtifacts}/sysfw.itb" 5 6C0000
               printf '\nAll TDA4VH/J784S4 NOR boot images flashed and verified.\n'
             '';
           };
         in {
           default = uniflash;
+          uniflash = uniflash;
           ti-arm-clang = tiArmClang;
           sk-tda4vm-flash-writer = skTda4vmFlashWriter;
+          j784s4-evm-flash-writer = j784s4FlashWriter;
           processor-sdk-serial-flash = processorSerialFlash;
           tda4vm-boot-artifacts = tda4vmBootArtifacts;
-          tda4vm = flashTarget "TDA4VM" skTda4vmFlashWriter;
+          tda4vm = flashTarget "TDA4VM" "${skTda4vmFlashWriter}/uart_sk_tda4vm_flash_programmer_release.tiimage";
           tda4vm-flash-nor-boot = tda4vmFlashNorBoot;
           tda4vh-boot-artifacts = tda4vhBootArtifacts;
           tda4vh-flash-nor-boot = tda4vhFlashNorBoot;
-          tda4vh = flashTarget "TDA4VH" null;
+          tda4vh = flashTarget "TDA4VH" "${j784s4FlashWriter}/uart_j784s4_evm_flash_programmer_release.tiimage";
         });
 
       apps = forAllSystems (pkgs:
         let
-          packages = self.packages.${pkgs.system};
+          packages = self.packages.${pkgs.stdenv.hostPlatform.system};
         in {
           tda4vm = {
             type = "app";

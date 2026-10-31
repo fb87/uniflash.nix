@@ -126,3 +126,14 @@ index ac9175c..4ce8a89 100644
 -  UTILSPATH = /bin/
 +  UTILSPATH =
  endif
+diff --git a/packages/ti/board/utils/uniflash/target/src/xmodem.c b/packages/ti/board/utils/uniflash/target/src/xmodem.c
+index 29b89b0..5df599e 100755
+--- a/packages/ti/board/utils/uniflash/target/src/xmodem.c
++++ b/packages/ti/board/utils/uniflash/target/src/xmodem.c
+@@ -117,5 +117,5 @@ static int8_t UFP_flashCheck(uint8_t *flashAddr,
+-    for(i = 0U; i < size; i +=4U)
++    for(i = 0U; i < size; i++)
+     {
+         flashValue = *(flashAddr+i);
+         checkValue = *(checkAddr+i);
+         if (flashValue != checkValue)

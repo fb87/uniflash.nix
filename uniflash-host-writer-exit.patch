@@ -2,23 +2,7 @@ diff --git a/packages/ti/board/utils/uniflash/host/source/ProcessorSDKSerialFlas
 index a68f0d1..913ae57 100755
 --- a/packages/ti/board/utils/uniflash/host/source/ProcessorSDKSerialFlash.cpp
 +++ b/packages/ti/board/utils/uniflash/host/source/ProcessorSDKSerialFlash.cpp
-@@ -2173,6 +2173,15 @@ int LoadImage( const char * imagePath, const char** optionNames, const char** op
-                 }
-             }
-         }
-+
-+        /* Leave the flash writer running at the initial baud rate. The stock
-+         * host continues into a second transfer of imagePath, which is still
-+         * the writer itself. A following invocation supplies the real image.
-+         */
-+        if (RBL == 1) {
-+            close(fdesc);
-+            return 0;
-+        }
- 
- #ifdef WINDOWS
- 		err = getMaxBaudRate( wc, &supBaudRate, hwFlowCtrl, def_raw );
-@@ -2187,6 +2196,9 @@ int LoadImage( const char * imagePath, const char** optionNames, const char** op
+@@ -2187,6 +2187,9 @@ int LoadImage( const char * imagePath, const char** optionNames, const char** op
              return err;
          }
  
