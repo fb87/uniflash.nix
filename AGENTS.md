@@ -4,7 +4,7 @@
 
 - This flake contains unfree TI software. Build or run with `NIXPKGS_ALLOW_UNFREE=1` and `--impure`, for example `NIXPKGS_ALLOW_UNFREE=1 nix build --impure .#tda4vm`.
 - Validate evaluation without rebuilding large artifacts: `NIXPKGS_ALLOW_UNFREE=1 nix flake check --impure --no-build`.
-- Key packages are `uniflash` (default), `ti-arm-clang`, `processor-sdk-serial-flash`, `sk-tda4vm-flash-writer`, `tda4vm-boot-artifacts`, `tda4vm`, `tda4vm-flash-nor-boot`, and `tda4vh`.
+- Key packages are `uniflash` (default), `ti-arm-clang`, `processor-sdk-serial-flash`, `sk-tda4vm-flash-writer`, `tda4vm-boot-artifacts`, `tda4vm`, `tda4vm-flash-nor-boot`, `tda4vh-boot-artifacts`, `tda4vh-flash-nor-boot`, and `tda4vh`.
 - The TDA4VM writer build is expensive. Build `.#processor-sdk-serial-flash` separately when changing only host protocol code; build `.#sk-tda4vm-flash-writer` when changing target/flash code.
 
 ## Source Composition
@@ -28,6 +28,10 @@
 - Flash that complete layout in one RAM-writer session with `NIXPKGS_ALLOW_UNFREE=1 nix run --impure .#tda4vm-flash-nor-boot -- /dev/serial/by-id/...-if01-port0`.
 - The connected SK-TDA4VM follows the GP flow. Use GP `tifs.bin`, `tiboot3.bin`, and `sysfw.itb`; HS-FS TIFS leaves the writer unresponsive.
 - The `tda4vh` app currently wraps stock processor flashing only. Do not claim it has a board-specific custom writer until one is implemented and tested.
+- TDA4VH EVM is J784S4XEVM. TI's stock UniFlash package includes J784S4 writers under `processors/FlashWriter/j784s4_evm*`; the prepared `tda4vh-flash-nor-boot` target uses the GP `j784s4_evm` writer and is untested until hardware is available.
+- J784S4 EVM UARTs use FTDI bridges: J48 exposes MCU_UART0 then WKUP_UART0; J49 exposes UART8, UART5, UART2, UART3. The flashing port is J48 COM1, not the TDA4VM CP2108 `if01` path.
+- J784S4 EVM has Cypress S28HS512 xSPI NOR on `MCU_OSPI0` and TI's documented J7 OSPI offsets apply: `tiboot3.bin` `0x0`, `tispl.bin` `0x80000`, `u-boot.img` `0x280000`, `sysfw.itb` `0x6C0000`.
+- J784S4 boot bundle: `https://dr-download.ti.com/software-development/software-development-kit-sdk/MD-lOshtRwR8P/11.02.02.05/boot-adas-j784s4-evm.tar.gz`, SHA-256 `b8139d948a0d71dc6be16e176af4a6c2ee682e857eec9cd621c10947d7d0445d`.
 
 ## Safety And Verification
 

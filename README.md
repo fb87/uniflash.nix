@@ -107,4 +107,10 @@ After all four stages report `Flash Programming Success!`, set xSPI mode `OFF/OF
 
 ## TDA4VH
 
-`.#tda4vh` currently wraps UniFlash's stock processor mode. It does not yet include a TDA4VH board-specific writer or boot bundle.
+TDA4VH uses the J784S4XEVM platform. A prepared, untested one-shot NOR target is available:
+
+```sh
+NIXPKGS_ALLOW_UNFREE=1 nix run --impure .#tda4vh-flash-nor-boot -- /dev/ttyUSB0
+```
+
+The J784S4 boot files are provided by `.#tda4vh-boot-artifacts`, sourced from TI's `boot-adas-j784s4-evm.tar.gz` (SHA-256 `b8139d948a0d71dc6be16e176af4a6c2ee682e857eec9cd621c10947d7d0445d`). The flashing UART is J48 COM1; J784S4 uses FTDI bridges and does not use the SK-TDA4VM CP2108 `if01` path. This target is untested until a J784S4XEVM is connected.

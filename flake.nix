@@ -125,6 +125,26 @@
               platforms = pkgs.lib.platforms.all;
             };
           };
+          tda4vhBootArtifacts = pkgs.stdenvNoCC.mkDerivation {
+            pname = "tda4vh-boot-artifacts";
+            version = "11.02.02.05-j784s4";
+            src = pkgs.fetchurl {
+              url = "https://dr-download.ti.com/software-development/software-development-kit-sdk/MD-lOshtRwR8P/11.02.02.05/boot-adas-j784s4-evm.tar.gz";
+              hash = "sha256-uBOdlIoNcdxr4W4XavSmwu5oLoV+7JzWIcEJR9fQRF0=";
+            };
+            dontUnpack = true;
+            installPhase = ''
+              runHook preInstall
+              mkdir -p "$out"
+              tar -xzf "$src" -C "$out"
+              runHook postInstall
+            '';
+            meta = {
+              description = "TI J784S4/TDA4VH EVM boot firmware artifacts";
+              license = pkgs.lib.licenses.unfree;
+              platforms = pkgs.lib.platforms.all;
+            };
+          };
           skTda4vmFlashWriter = pkgs.stdenvNoCC.mkDerivation {
             pname = "sk-tda4vm-uniflash-writer";
             version = "11.02.00";
@@ -423,6 +443,80 @@
               printf '\nAll TDA4VM NOR boot images flashed and verified.\n'
             '';
           };
+          tda4vhFlashNorBoot = pkgs.writeShellApplication {
+            name = "tda4vh-flash-nor-boot";
+            runtimeInputs = [ uniflash processorSerialFlash pkgs.coreutils pkgs.gnugrep ];
+            text = ''
+              port="''${1:-''${UNIFLASH_PORT:-/dev/ttyUSB0}}"
+              timeout_seconds="''${UNIFLASH_TIMEOUT:-240}"
+              handshake_seconds="''${UNIFLASH_HANDSHAKE_TIMEOUT:-5}"
+
+              if [ ! -e "$port" ]; then
+                printf 'UART port does not exist: %s\n' "$port" >&2
+                exit 2
+              fi
+              printf 'Restart or power-cycle the J784S4 EVM, keep UART boot enabled, then type READY: '
+              read -r restart_confirmation
+              if [ "$restart_confirmation" != "READY" ]; then
+                printf 'Expected READY; aborting without contacting the board.\n' >&2
+                exit 2
+              fi
+
+              set +e
+              timeout --foreground --kill-after=5s "$timeout_seconds" \
+                ProcessorSDKSerialFlash -d 3 -c "$port" \
+                -f "${uniflash}/processors/FlashWriter/j784s4_evm/uart_j784s4_evm_flash_programmer_release.tiimage" -i 0
+              writer_status="$?"
+              set -e
+              if [ "$writer_status" -ne 0 ] && [ "$writer_status" -ne 1 ]; then
+                exit "$writer_status"
+              fi
+
+              run_image() {
+                image="$1"
+                image_type="$2"
+                offset="$3"
+                image_log="$(mktemp)"
+                printf '\nFlashing %s at 0x%s\n' "$(basename "$image")" "$offset"
+                stdbuf -o0 ProcessorSDKSerialFlash -d 3 -c "$port" -f "$image" -i "$image_type" -o "$offset" \
+                  > >(tee "$image_log") 2>&1 &
+                image_pid="$!"
+                elapsed=0
+                transfer_started=0
+                while kill -0 "$image_pid" 2>/dev/null; do
+                  if grep -qE 'Flashing Image|Transferring File of size' "$image_log"; then transfer_started=1; fi
+                  if [ "$transfer_started" -eq 0 ] && [ "$elapsed" -ge "$handshake_seconds" ]; then
+                    kill "$image_pid" 2>/dev/null || true
+                    sleep 1
+                    kill -9 "$image_pid" 2>/dev/null || true
+                    wait "$image_pid" || true
+                    rm -f "$image_log"
+                    return 124
+                  fi
+                  if [ "$elapsed" -ge "$timeout_seconds" ]; then
+                    kill "$image_pid" 2>/dev/null || true
+                    sleep 1
+                    kill -9 "$image_pid" 2>/dev/null || true
+                    wait "$image_pid" || true
+                    rm -f "$image_log"
+                    return 124
+                  fi
+                  sleep 1
+                  elapsed=$((elapsed + 1))
+                done
+                wait "$image_pid"
+                status="$?"
+                rm -f "$image_log"
+                return "$status"
+              }
+
+              run_image "${tda4vhBootArtifacts}/tiboot3.bin" 1 0
+              run_image "${tda4vhBootArtifacts}/tispl.bin" 2 80000
+              run_image "${tda4vhBootArtifacts}/u-boot.img" 2 280000
+              run_image "${tda4vhBootArtifacts}/sysfw.itb" 5 6C0000
+              printf '\nAll TDA4VH/J784S4 NOR boot images flashed and verified.\n'
+            '';
+          };
         in {
           default = uniflash;
           ti-arm-clang = tiArmClang;
@@ -431,6 +525,8 @@
           tda4vm-boot-artifacts = tda4vmBootArtifacts;
           tda4vm = flashTarget "TDA4VM" skTda4vmFlashWriter;
           tda4vm-flash-nor-boot = tda4vmFlashNorBoot;
+          tda4vh-boot-artifacts = tda4vhBootArtifacts;
+          tda4vh-flash-nor-boot = tda4vhFlashNorBoot;
           tda4vh = flashTarget "TDA4VH" null;
         });
 
@@ -449,6 +545,10 @@
           tda4vh = {
             type = "app";
             program = "${packages.tda4vh}/bin/tda4vh-flash";
+          };
+          tda4vh-flash-nor-boot = {
+            type = "app";
+            program = "${packages.tda4vh-flash-nor-boot}/bin/tda4vh-flash-nor-boot";
           };
         });
     };
