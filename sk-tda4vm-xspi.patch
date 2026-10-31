@@ -1,0 +1,128 @@
+diff --git a/packages/ti/board/utils/uniflash/target/src/ospi/ospi.h b/packages/ti/board/utils/uniflash/target/src/ospi/ospi.h
+index c0f94cf..f48c96c 100755
+--- a/packages/ti/board/utils/uniflash/target/src/ospi/ospi.h
++++ b/packages/ti/board/utils/uniflash/target/src/ospi/ospi.h
+@@ -47,7 +47,7 @@ extern "C" {
+ #include <ti/drv/spi/soc/SPI_soc.h>
+ #include <ti/board/src/flash/include/board_flash.h>
+ 
+-#if defined(j7200_evm) || defined(am64x_evm) || defined(j721s2_evm) || defined(j784s4_evm) || defined(j742s2_evm)
++#if defined(j721e_evm) || defined(j7200_evm) || defined(am64x_evm) || defined(j721s2_evm) || defined(j784s4_evm) || defined(j742s2_evm)
+ #include <ti/board/src/flash/nor/ospi/nor_xspi.h>
+ #else
+ #include <ti/board/src/flash/nor/ospi/nor_ospi.h>
+@@ -77,9 +77,9 @@ extern "C" {
+ 
+ #endif
+ 
+-#if defined(SOC_AM65XX) || defined(j721e_evm)
++#if defined(SOC_AM65XX)
+ #define OSPI_FLASH_ID   BOARD_FLASH_ID_MT35XU512ABA1G12
+-#elif defined(j7200_evm) || defined (am64x_evm) || defined(j721s2_evm) || defined(j784s4_evm) || defined(j742s2_evm)
++#elif defined(j721e_evm) || defined(j7200_evm) || defined (am64x_evm) || defined(j721s2_evm) || defined(j784s4_evm) || defined(j742s2_evm)
+ #define OSPI_FLASH_ID   BOARD_FLASH_ID_S28HS512T
+ #else
+ #define OSPI_FLASH_ID   BOARD_FLASH_ID_MT35XU256ABA1G12
+diff --git a/packages/ti/board/utils/uniflash/target/src/ospi/ospi.c b/packages/ti/board/utils/uniflash/target/src/ospi/ospi.c
+index 39f9034..24e5d57 100755
+--- a/packages/ti/board/utils/uniflash/target/src/ospi/ospi.c
++++ b/packages/ti/board/utils/uniflash/target/src/ospi/ospi.c
+@@ -389,7 +389,12 @@ static int8_t UFP_ospiInit(void *arg)
+     ospiUdmaInit(&ospi_cfg);
+ #endif
+ 
+-#if defined(SOC_J7200) || defined(SOC_AM64X) || defined(SOC_J721S2) || defined(SOC_J784S4) || defined(SOC_J742S2)
++#if defined(SOC_J721E) || defined(SOC_J7200) || defined(SOC_AM64X) || defined(SOC_J721S2) || defined(SOC_J784S4) || defined(SOC_J742S2)
+     ospi_cfg.dacEnable  = BFALSE;
+ #endif
++#if defined(SOC_J721E)
++    ospi_cfg.xferLines  = OSPI_XFER_LINES_SINGLE;
++    ospi_cfg.dtrEnable  = BFALSE;
++    ospi_cfg.baudRateDiv = 4U;
++#endif
+     ospi_cfg.phyEnable  = BFALSE;
+diff --git a/packages/ti/board/src/flash/src_files_flash.mk b/packages/ti/board/src/flash/src_files_flash.mk
+index 96e50ec..4268153 100644
+--- a/packages/ti/board/src/flash/src_files_flash.mk
++++ b/packages/ti/board/src/flash/src_files_flash.mk
+@@ -80,7 +80,7 @@ endif
+ endif
+ 
+ 
+-ifeq ($(BOARD),$(filter $(BOARD), am65xx_idk am65xx_evm j721e_sim j721e_evm))
++ifeq ($(BOARD),$(filter $(BOARD), am65xx_idk am65xx_evm j721e_sim))
+ SRCDIR += src/flash/nor src/flash/nor/device src/flash/nor/ospi
+ INCDIR += src/flash/nor src/flash/nor/device src/flash/nor/ospi
+ SRCS_COMMON += nor_ospi.c nor.c nor_spi_patterns.c nor_spi_phy_tune.c
+@@ -97,7 +97,7 @@ PACKAGE_SRCS_COMMON += src/flash/nor/device/m35xu512.h
+ endif
+ endif
+ 
+-ifeq ($(BOARD),$(filter $(BOARD), j7200_evm am64x_evm am64x_svb))
++ifeq ($(BOARD),$(filter $(BOARD), j721e_evm j7200_evm am64x_evm am64x_svb))
+ SRCDIR += src/flash/nor src/flash/nor/device src/flash/nor/ospi
+ INCDIR += src/flash/nor src/flash/nor/device src/flash/nor/ospi
+ SRCS_COMMON += nor_xspi.c nor.c nor_spi_patterns.c nor_spi_phy_tune.c
+diff --git a/packages/ti/board/src/flash/nor/ospi/nor_xspi.h b/packages/ti/board/src/flash/nor/ospi/nor_xspi.h
+index f7866c6..f67a6bb 100644
+--- a/packages/ti/board/src/flash/nor/ospi/nor_xspi.h
++++ b/packages/ti/board/src/flash/nor/ospi/nor_xspi.h
+@@ -47,7 +47,7 @@
+ #include <ti/board/src/flash/nor/nor.h>
+ #include <ti/drv/spi/SPI.h>
+ #include <ti/drv/spi/soc/SPI_soc.h>
+-#if defined(j7200_evm) || defined(am64x_evm) || defined(am64x_svb) || defined(j721s2_evm) || defined(j784s4_evm) || defined(j742s2_evm)
++#if defined(j721e_evm) || defined(j7200_evm) || defined(am64x_evm) || defined(am64x_svb) || defined(j721s2_evm) || defined(j784s4_evm) || defined(j742s2_evm)
+ #include <ti/board/src/flash/nor/device/s28hs512t.h>
+ #endif
+ #include <ti/board/src/flash/nor/ospi/nor_spi_phy_tune.h>
+diff --git a/packages/ti/board/src/flash/nor/nor.c b/packages/ti/board/src/flash/nor/nor.c
+index bbc115e..ebc4645 100755
+--- a/packages/ti/board/src/flash/nor/nor.c
++++ b/packages/ti/board/src/flash/nor/nor.c
+@@ -112,7 +112,7 @@ NOR_Config Nor_config[BOARD_FLASH_NOR_INTF_MAX] =
+         NULL
+     }
+ };
+-#elif defined (j721e_sim) || defined (j721e_evm)
++#elif defined (j721e_sim)
+ NOR_Config Nor_config[BOARD_FLASH_NOR_INTF_MAX] =
+ {
+     {
+@@ -131,6 +131,25 @@ NOR_Config Nor_config[BOARD_FLASH_NOR_INTF_MAX] =
+         &Nor_hpfFxnTable
+     }
+ };
++#elif defined (j721e_evm)
++NOR_Config Nor_config[BOARD_FLASH_NOR_INTF_MAX] =
++{
++    {
++        NULL
++    },
++    {
++        &Nor_qspiFxnTable
++    },
++    {
++        NULL
++    },
++    {
++        &Nor_xspiFxnTable
++    },
++    {
++        &Nor_hpfFxnTable
++    }
++};
+ #elif defined(j7200_evm)
+ NOR_Config Nor_config[BOARD_FLASH_NOR_INTF_MAX] =
+ {
+diff --git a/packages/ti/build/makerules/env.mk b/packages/ti/build/makerules/env.mk
+index ac9175c..4ce8a89 100644
+--- a/packages/ti/build/makerules/env.mk
++++ b/packages/ti/build/makerules/env.mk
+@@ -55,5 +55,5 @@ ifeq ($(OS),Windows_NT)
+ else
+   # else, assume it is linux
+   PATH_SEPARATOR = :
+-  UTILSPATH = /bin/
++  UTILSPATH =
+ endif

@@ -1,1 +1,4 @@
 uniflash_sl.*.run
+*.wic
+*.wic.xz
+*.aria2
